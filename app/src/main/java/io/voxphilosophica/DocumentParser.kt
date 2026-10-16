@@ -62,7 +62,7 @@ object DocumentParser {
                         total += count
                         require(total <= MAX_DOCUMENT) { "Document exceeds 120 MB; try a smaller file" }
                         output.write(buf, 0, count)
-                        if (total % (512 * 1024) < count || total == count) {
+                        if (total % (512 * 1024) < count || total == count.toLong()) {
                             update("Copying document", (total / 1024).toInt(),
                                 if (expectedBytes in 1..MAX_DOCUMENT) (expectedBytes / 1024).toInt() else 0,
                                 "Copied " + (total / 1048576) + " MB to local storage")
