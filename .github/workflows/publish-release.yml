@@ -1,0 +1,45 @@
+name: Publish Integrated Android APK Release
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-release.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download verified APK artifact from successful integration build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          gh run download 38960679683 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name VOX-PHILOSOPHICA-0.3.0-INTEGRATED-ARM64 \
+            --dir release
+          test -s release/app-debug.apk
+          unzip -Z1 release/app-debug.apk | grep -x 'assets/kokoro-v1_0.tar.bz2'
+          unzip -Z1 release/app-debug.apk | grep -x 'assets/kokoro-v1_1.tar.bz2'
+          mv release/app-debug.apk release/VOX-PHILOSOPHICA-v0.3.0-INTEGRATED.apk
+          sha256sum release/VOX-PHILOSOPHICA-v0.3.0-INTEGRATED.apk
+      - name: Publish public APK link
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=v0.3.0-integrated
+          APK=release/VOX-PHILOSOPHICA-v0.3.0-INTEGRATED.apk
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$APK" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "VOX PHILOSOPHICA 0.3.0 — Integrated Kokoro" \
+              --notes "Native Android ARM64 debug APK bundling upstream SHA-256 verified quantized Kokoro v1.0 and v1.1 speech models. No model network download is needed after installation. Models are unpacked into app-private storage on first use. Source text remains on-device. Neural weights are not independently fine-tuned. Built via GitHub Actions; physical-device TTS has not been validated."
+          fi
