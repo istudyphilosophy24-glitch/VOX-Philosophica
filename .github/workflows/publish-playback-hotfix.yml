@@ -1,0 +1,46 @@
+name: Publish VOX 0.4.1 Playback Fix
+on:
+  workflow_run:
+    workflows: ["Build VOX 0.4.1 Playback Hotfix"]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+jobs:
+  release:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Obtain tested APK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          if [ -z "$RUN_ID" ]; then
+            RUN_ID=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow android.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          fi
+          mkdir -p release
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name VOX-PHILOSOPHICA-v0.4.1-PLAYBACK-ARM64 --dir release
+          test -s release/app-debug.apk
+          unzip -Z1 release/app-debug.apk | grep -qx 'assets/kokoro-v1_0.tar.bz2'
+          unzip -Z1 release/app-debug.apk | grep -qx 'assets/kokoro-v1_1.tar.bz2'
+          mv release/app-debug.apk release/VOX-PHILOSOPHICA-v0.4.1-PLAYBACK-FIX.apk
+          sha256sum release/VOX-PHILOSOPHICA-v0.4.1-PLAYBACK-FIX.apk
+      - name: Attach direct APK to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=v0.4.1
+          APK=release/VOX-PHILOSOPHICA-v0.4.1-PLAYBACK-FIX.apk
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" \
+              --title "VOX PHILOSOPHICA 0.4.1 — Playback Hotfix" \
+              --notes "Fixes ReaderActivity force-close when pressing Play: initialized current-passage view and guarded playback status broadcasts. Improves error handling for foreground playback service and notifications. Preserves EPUB/PDF/DOCX improvements and both built-in offline Kokoro models. GitHub unit test verifies the playback broadcast no longer crashes the reader. Physical-device Kokoro playback requires confirmation. Debug signatures may differ between builds; back up important book files before uninstalling an older version."
+          fi
