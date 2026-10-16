@@ -1,4 +1,4 @@
-name: Build VOX 0.4 Reader & UI
+name: Build VOX 0.4.1 Playback Hotfix
 on:
   workflow_dispatch:
   push:
@@ -25,6 +25,8 @@ jobs:
           gradle-version: '8.7'
       - name: Prepare Android SDK
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Run playback crash regression test
+        run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
       - name: Download and verify bundled neural models
         shell: bash
         run: |
@@ -56,7 +58,7 @@ jobs:
       - name: Upload single-file Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: VOX-PHILOSOPHICA-v0.4.0-READER-ARM64
+          name: VOX-PHILOSOPHICA-v0.4.1-PLAYBACK-ARM64
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
