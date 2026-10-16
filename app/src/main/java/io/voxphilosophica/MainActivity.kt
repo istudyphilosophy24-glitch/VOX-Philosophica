@@ -454,7 +454,8 @@ class MainActivity : Activity() {
                         val pct = when (p.stage) {
                             "Copying document" -> 1 + (stagePct * 17).toInt()
                             "Extracting EPUB chapters", "Extracting DOCX paragraphs",
-                            "Extracting PDF text", "Reading PDF pages" ->
+                            "Extracting PDF text", "Reading PDF pages",
+                            "Recognizing scanned PDF pages" ->
                                 20 + (stagePct * 70).toInt()
                             "Extraction complete" -> 92
                             else -> 19
