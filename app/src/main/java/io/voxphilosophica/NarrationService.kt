@@ -105,7 +105,7 @@ class NarrationService : Service() {
             val startChapter = intent.getIntExtra("chapter", 0).coerceIn(0, book!!.chapters.lastIndex)
             index = parts.indexOfFirst { it.chapter == startChapter }.coerceAtLeast(0)
             paused = false
-            showStatus("Loading ${if (mode == "kokoro") "Kokoro" else "Android TTS"}…")
+            showStatus("Loading ${if (mode.startsWith("kokoro")) "integrated Kokoro" else "Android TTS"}…")
             schedule(index)
         } catch (error: Exception) { showStatus("Cannot start: ${error.message}"); stopSelf() }
     }
@@ -130,7 +130,20 @@ class NarrationService : Service() {
         worker.execute {
             try {
                 if (!output.exists() || output.length() < 44L) {
-                    if (engine == null) engine = if (selectedEngine == "kokoro") KokoroSpeechEngine(this) else SystemSpeechEngine(this)
+                    if (engine == null) {
+                        if (selectedEngine == "system") {
+                            engine = SystemSpeechEngine(this)
+                        } else {
+                            val which = if (selectedEngine == "kokoro-latest")
+                                ModelInstaller.LATEST else ModelInstaller.ENGLISH
+                            ModelInstaller(this).install(which) { progress ->
+                                main.post {
+                                    if (request == epoch.get()) showStatus(progress, part.chapter)
+                                }
+                            }
+                            engine = KokoroSpeechEngine(this, which, voiceId)
+                        }
+                    }
                     val temporary = File(output.parentFile, output.name + ".tmp")
                     try {
                         engine!!.synthesize(part.text, voiceId, speed, temporary)
