@@ -58,14 +58,34 @@ object DocumentParser {
         }
         output.toString("UTF-8")
     }
-    private fun secureXml(xml: String) = DocumentBuilderFactory.newInstance().apply {
-        isNamespaceAware = true
-        setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-        setFeature("http://xml.org/sax/features/external-general-entities", false)
-        setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-        isXIncludeAware = false
-        isExpandEntityReferences = false
-    }.newDocumentBuilder().parse(InputSource(StringReader(xml)))
+    /**
+     * Android's XML parser does not implement all Apache Xerces feature URIs.
+     * Enforce the DTD/ENTITY prohibition ourselves and additionally disable external
+     * resolution. Unsupported optional parser hardening flags must not break imports.
+     */
+    private fun secureXml(xml: String): org.w3c.dom.Document {
+        require(!Regex("(?i)<!\\s*(DOCTYPE|ENTITY)\\b").containsMatchIn(xml)) {
+            "XML documents containing DTD or entity declarations are not supported"
+        }
+        val factory = DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = true
+            isExpandEntityReferences = false
+            runCatching { isXIncludeAware = false }
+            for ((feature, enabled) in arrayOf(
+                "http://apache.org/xml/features/disallow-doctype-decl" to true,
+                "http://xml.org/sax/features/external-general-entities" to false,
+                "http://xml.org/sax/features/external-parameter-entities" to false,
+                "http://apache.org/xml/features/nonvalidating/load-external-dtd" to false
+            )) {
+                runCatching { setFeature(feature, enabled) }
+            }
+        }
+        return factory.newDocumentBuilder().apply {
+            setEntityResolver { _, _ ->
+                throw org.xml.sax.SAXException("External XML entities are prohibited")
+            }
+        }.parse(InputSource(StringReader(xml)))
+    }
     private fun htmlToText(content: String): String {
         // Remove script/style before HTML-to-text conversion.
         val cleaned = content.replace(Regex("(?is)<(script|style)[^>]*>.*?</\\1>"), "")
