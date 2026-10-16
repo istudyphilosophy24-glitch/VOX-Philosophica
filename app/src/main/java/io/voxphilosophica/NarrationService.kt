@@ -77,8 +77,17 @@ class NarrationService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             START -> {
-                startForegroundCompat(notification("Preparing audiobook…"))
-                setup(intent)
+                try {
+                    startForegroundCompat(notification("Preparing audiobook…"))
+                    setup(intent)
+                } catch (e: RuntimeException) {
+                    android.util.Log.e("VOX.Narration", "Cannot start foreground playback", e)
+                    runCatching {
+                        showStatus("Cannot start narration: " +
+                            (e.message ?: e.javaClass.simpleName))
+                    }
+                    stopSelf()
+                }
             }
             PAUSE -> pause()
             RESUME -> resume()
@@ -239,7 +248,13 @@ class NarrationService : Service() {
             .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or
                 PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS or PlaybackState.ACTION_STOP)
             .setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f).build())
-        getSystemService(NotificationManager::class.java).notify(NOTIFY_ID, notification(message))
+        // Notification failures must not take down an otherwise functional player.
+        try {
+            getSystemService(NotificationManager::class.java)
+                .notify(NOTIFY_ID, notification(message))
+        } catch (e: RuntimeException) {
+            android.util.Log.w("VOX.Narration", "Playback notification unavailable", e)
+        }
         sendBroadcast(Intent(EVENT).setPackage(packageName)
             .putExtra("bookId", book?.id ?: "")
             .putExtra("message", message).putExtra("chunk", index)
