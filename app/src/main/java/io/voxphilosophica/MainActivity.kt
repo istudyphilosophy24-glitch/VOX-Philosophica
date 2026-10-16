@@ -48,7 +48,7 @@ class MainActivity : Activity() {
             updateMini()
             if (page == "studio") {
                 val diagnostic = intent?.getStringExtra("message")
-                if (diagnostic != null && diagnostic.contains("voice test", true)) {
+                if (diagnostic != null && intent.getStringExtra("bookId").isNullOrEmpty()) {
                     modelStatus?.text = diagnostic
                 }
             }
