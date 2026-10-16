@@ -74,12 +74,14 @@ class KokoroSpeechEngine(
             "Bundled model was not prepared. Reopen the library and prepare integrated voices."
         }
         val dir = installer.modelDir(which)
-        val british = if (which == ModelInstaller.LATEST) voiceId == 2 else voiceId in 20..27
-        val accentLexicon = File(dir,
-            if (british) "lexicon-gb-en.txt" else "lexicon-us-en.txt")
-        val englishLexicon = if (accentLexicon.isFile) accentLexicon
-            else File(dir, "lexicon-us-en.txt")
+        // Match the upstream Kokoro examples and the CI inference smoke test.
+        // The British accent is selected by speaker ID, not by changing the main
+        // phonemizer lexicon for a pretrained English voice.
+        val englishLexicon = File(dir, "lexicon-us-en.txt")
         val chineseLexicon = File(dir, "lexicon-zh.txt")
+        require(englishLexicon.isFile && chineseLexicon.isFile) {
+            "Kokoro pronunciation dictionaries are incomplete"
+        }
         val lexicons = listOf(englishLexicon, chineseLexicon)
             .filter { it.isFile }.joinToString(",") { it.absolutePath }
         engine = OfflineTts(
@@ -101,13 +103,16 @@ class KokoroSpeechEngine(
     }
 
     override fun synthesize(text: String, speaker: Int, speed: Float, output: File) {
-        val numSpeakers = engine.numSpeakers().coerceAtLeast(1)
+        val numSpeakers = engine.numSpeakers()
+        require(numSpeakers > 0) { "Kokoro initialized without any available speakers" }
         val generated = engine.generate(
             NarrationDirector.forSpeech(text),
             sid = speaker.coerceIn(0, numSpeakers - 1),
             speed = speed
         )
-        require(generated.samples.isNotEmpty()) { "Kokoro generated no audio" }
+        require(generated.samples.isNotEmpty() && generated.sampleRate > 8000) {
+            "Kokoro produced no usable speech samples"
+        }
         WavWriter.save(output, generated.samples, generated.sampleRate)
     }
 
