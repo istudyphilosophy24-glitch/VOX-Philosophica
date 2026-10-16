@@ -4,7 +4,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <application android:allowBackup="false" android:theme="@android:style/Theme.Material.NoActionBar" android:label="VOX PHILOSOPHICA" android:usesCleartextTraffic="false">
+    <application android:allowBackup="false" android:largeHeap="true" android:theme="@android:style/Theme.Material.NoActionBar" android:label="VOX PHILOSOPHICA" android:usesCleartextTraffic="false">
         <activity android:name=".ReaderActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
@@ -12,6 +12,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <service android:name=".NarrationService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
+        <!-- Keep native ONNX memory/errors out of the library UI process. -->
+        <service android:name=".NarrationService"
+                 android:exported="false"
+                 android:process=":tts"
+                 android:foregroundServiceType="mediaPlayback" />
     </application>
 </manifest>
