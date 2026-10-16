@@ -44,7 +44,15 @@ class MainActivity : Activity() {
     private var page = "home"
     private val documentRequest = 99
     private val playback = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) { updateMini() }
+        override fun onReceive(context: Context?, intent: Intent?) {
+            updateMini()
+            if (page == "studio") {
+                val diagnostic = intent?.getStringExtra("message")
+                if (diagnostic != null && diagnostic.contains("voice test", true)) {
+                    modelStatus?.text = diagnostic
+                }
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -268,6 +276,14 @@ class MainActivity : Activity() {
         card.addFull(action("Prepare English voices offline") {
             prepareModel(ModelInstaller.ENGLISH)
         })
+        card.gap(this, 8)
+        card.addFull(action("▶  Test English Kokoro — hear a sample", false) {
+            modelStatus?.text = "Starting real Kokoro speech diagnostic…"
+            NarrationService.dispatch(this, NarrationService.TEST_VOICE) {
+                putExtra("engine", "kokoro-english")
+                putExtra("speaker", 26)
+            }
+        })
         content.addFull(card)
         content.gap(this, 12)
         val latest = section("Kokoro · Latest multilingual")
@@ -278,11 +294,21 @@ class MainActivity : Activity() {
         latest.addFull(action("Prepare latest voices offline", false) {
             prepareModel(ModelInstaller.LATEST)
         })
+        latest.gap(this, 8)
+        latest.addFull(action("▶  Test Kokoro v1.1 — hear a sample", false) {
+            modelStatus?.text = "Starting multilingual Kokoro speech diagnostic…"
+            NarrationService.dispatch(this, NarrationService.TEST_VOICE) {
+                putExtra("engine", "kokoro-latest")
+                putExtra("speaker", 0)
+            }
+        })
         content.addFull(latest)
         content.gap(this, 14)
         modelStatus = text("Checking included models…", 13f, Palette.MUTED)
         content.addView(modelStatus)
         updateModelStatus()
+        content.gap(this, 8)
+        content.addView(text("The test generates a real local WAV file and plays it. It does not need a book or Internet. If a test fails, the reason should appear above without closing the library.", 12f, Palette.MUTED))
         content.gap(this, 20)
         content.addView(text("Listening tips", 21f, Palette.WHITE, true))
         content.gap(this, 9)
