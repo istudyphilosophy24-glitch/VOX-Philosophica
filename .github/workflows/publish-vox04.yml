@@ -1,0 +1,45 @@
+name: Publish VOX 0.4 APK
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-vox04.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download verified APK from successful 0.4 build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          gh run download 38963773570 --repo "$GITHUB_REPOSITORY" \
+            --name VOX-PHILOSOPHICA-v0.4.0-READER-ARM64 --dir release
+          test -s release/app-debug.apk
+          unzip -Z1 release/app-debug.apk | grep -x 'assets/kokoro-v1_0.tar.bz2'
+          unzip -Z1 release/app-debug.apk | grep -x 'assets/kokoro-v1_1.tar.bz2'
+          unzip -Z1 release/app-debug.apk | grep -q 'lib/arm64-v8a/libsherpa-onnx-jni.so'
+          mv release/app-debug.apk release/VOX-PHILOSOPHICA-v0.4.0.apk
+          sha256sum release/VOX-PHILOSOPHICA-v0.4.0.apk
+      - name: Publish public GitHub release with direct APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=v0.4.0
+          APK=release/VOX-PHILOSOPHICA-v0.4.0.apk
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$APK" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target b69e549a8e5c6552d8e815adedd4d8ad4785a626 \
+              --title "VOX PHILOSOPHICA 0.4.0 — Reader & Listening Studio" \
+              --notes "Improved EPUB spine/TOC/author/cover parsing, structural DOCX import, selectable-text PDF import, Spotify-inspired dark library and player, search, mini-player, chapter navigation, and integrated offline Kokoro 1.0 and 1.1. Android ARM64 debug APK. Scanned PDFs need OCR; physical-device testing required."
+          fi
