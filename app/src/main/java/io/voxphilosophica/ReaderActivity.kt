@@ -59,12 +59,22 @@ class ReaderActivity : Activity() {
         val controls = section("THE NARRATOR")
         controls.gap(this, 10)
         controls.addView(text("Speech engine", 13f, Palette.MUTED))
-        engineSpinner = options(listOf("Android offline voice", "Kokoro local neural voice"))
-        engineSpinner.setSelection(if (ModelInstaller(this).installed) 1 else 0)
+        engineSpinner = options(listOf("Kokoro Studio · 28 English voices", "Kokoro Latest · 103 multilingual voices", "Android installed offline TTS"))
+        engineSpinner.setSelection(0)
         controls.addFull(engineSpinner)
         controls.gap(this, 10)
         controls.addView(text("Voice / speaker", 13f, Palette.MUTED))
-        voiceSpinner = options((1..11).map { "Voice $it" })
+        voiceSpinner = options(NarratorVoices.english.map { it.label })
+        engineSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val mode = when (position) { 0 -> "kokoro-english"; 1 -> "kokoro-latest"; else -> "system" }
+                voiceSpinner.adapter = ArrayAdapter(this@ReaderActivity,
+                    android.R.layout.simple_spinner_dropdown_item,
+                    NarratorVoices.forMode(mode).map { it.label })
+                voiceSpinner.setSelection(0)
+            }
+        }
         controls.addFull(voiceSpinner)
         controls.gap(this, 12)
         speedLabel = text("Narration speed · 1.00×", 13f, Palette.WHITE)
@@ -88,15 +98,18 @@ class ReaderActivity : Activity() {
         controls.addView(excerpt)
         controls.gap(this, 12)
         controls.addFull(action("▶  Narrate from selected section") {
-            if (engineSpinner.selectedItemPosition == 1 && !ModelInstaller(this).installed) {
-                status.text = "Install the Kokoro model from the library screen first."
-                return@action
+            val mode = when (engineSpinner.selectedItemPosition) {
+                0 -> "kokoro-english"
+                1 -> "kokoro-latest"
+                else -> "system"
             }
+            val voices = NarratorVoices.forMode(mode)
+            val speaker = voices.getOrNull(voiceSpinner.selectedItemPosition)?.speakerId ?: voices[0].speakerId
             NarrationService.dispatch(this, NarrationService.START) {
                 putExtra("bookId", book.id)
                 putExtra("chapter", chapterSpinner.selectedItemPosition)
-                putExtra("engine", if (engineSpinner.selectedItemPosition == 1) "kokoro" else "system")
-                putExtra("speaker", voiceSpinner.selectedItemPosition)
+                putExtra("engine", mode)
+                putExtra("speaker", speaker)
                 putExtra("speed", (70 + speedSeek.progress) / 100f)
             }
         })
