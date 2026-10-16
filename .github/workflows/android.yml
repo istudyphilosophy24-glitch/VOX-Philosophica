@@ -25,8 +25,15 @@ jobs:
           gradle-version: '8.7'
       - name: Prepare Android SDK
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
-      - name: Run playback crash regression test
-        run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
+      - name: Run Android reader, import and PDF extraction regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gradle :app:testDebugUnitTest --no-daemon --stacktrace; then
+            find app/build/test-results/testDebugUnitTest -name 'TEST-*.xml' -type f \
+              -exec sh -c 'echo "==== TEST DETAILS: $1 ===="; head -c 25000 "$1"; echo' _ '{}' \;
+            exit 1
+          fi
       - name: Download and verify bundled neural models
         shell: bash
         run: |
