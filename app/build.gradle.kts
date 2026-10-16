@@ -7,8 +7,8 @@ android {
         minSdk = 26
         targetSdk = 34
         ndk { abiFilters += listOf("arm64-v8a") }
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
     }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions {
@@ -24,4 +24,6 @@ dependencies {
         exclude(group = "com.github.k2-fsa.sherpa-onnx", module = "sherpa-onnx-jvm")
     }
     implementation("org.apache.commons:commons-compress:1.26.2")
+    implementation("org.jsoup:jsoup:1.18.3")
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 }
