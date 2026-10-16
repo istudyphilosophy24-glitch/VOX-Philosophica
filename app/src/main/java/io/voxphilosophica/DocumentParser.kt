@@ -23,12 +23,26 @@ object DocumentParser {
                         val author: String = "", val cover: ByteArray? = null)
     private data class Entry(val href: String, val mime: String, val properties: String)
     private const val MAX_DOCUMENT = 120L * 1024 * 1024
+    data class ImportProgress(val stage: String, val done: Int = 0,
+                              val total: Int = 0, val description: String = "")
 
-    fun import(context: Context, uri: Uri): Imported {
+    fun import(
+        context: Context, uri: Uri, onProgress: (ImportProgress) -> Unit = {}
+    ): Imported {
+        fun update(stage: String, done: Int = 0, total: Int = 0, note: String = "") {
+            if (Thread.currentThread().isInterrupted)
+                throw java.util.concurrent.CancellationException("Import cancelled")
+            onProgress(ImportProgress(stage, done, total, note))
+        }
+        update("Opening document", note = "Checking the selected file")
         val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
             if (it.moveToFirst()) it.getString(0) else null
         } ?: "Untitled"
         val ext = name.substringAfterLast('.', "").lowercase()
+        val expectedBytes = context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE),
+            null, null, null)?.use {
+            if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else -1L
+        } ?: -1L
         val file = File.createTempFile("vox-import-", ".bin", context.cacheDir)
         try {
             context.contentResolver.openInputStream(uri).use { input ->
@@ -42,14 +56,20 @@ object DocumentParser {
                         total += count
                         require(total <= MAX_DOCUMENT) { "Document exceeds 120 MB; try a smaller file" }
                         output.write(buf, 0, count)
+                        if (total % (512 * 1024) < count || total == count) {
+                            update("Copying document", (total / 1024).toInt(),
+                                if (expectedBytes in 1..MAX_DOCUMENT) (expectedBytes / 1024).toInt() else 0,
+                                "Copied " + (total / 1048576) + " MB to local storage")
+                        }
                     }
                 }
             }
             val baseTitle = name.substringBeforeLast('.').ifBlank { name }
-            return when (ext) {
-                "epub" -> extractEpub(file, baseTitle)
-                "docx" -> extractDocx(file, baseTitle)
-                "pdf" -> extractPdf(context, file, baseTitle)
+            update("Inspecting document", note = "Finding text and sections")
+            val parsed = when (ext) {
+                "epub" -> extractEpub(file, baseTitle, ::update)
+                "docx" -> extractDocx(file, baseTitle, ::update)
+                "pdf" -> extractPdf(context, file, baseTitle, ::update)
                 "html", "htm", "xhtml" -> Imported(baseTitle,
                     listOf(Chapter("Complete text", htmlToText(file.readText()))))
                 "txt", "md" -> Imported(baseTitle, listOf(Chapter("Complete text", file.readText())))
@@ -57,6 +77,9 @@ object DocumentParser {
             }.also { require(it.chapters.any { ch -> ch.body.isNotBlank() }) {
                 "No readable text found. Image-only/scanned PDFs need OCR." }
             }
+            update("Extraction complete", parsed.chapters.size, parsed.chapters.size,
+                parsed.chapters.size.toString() + " reading sections found")
+            return parsed
         } finally { file.delete() }
     }
 
@@ -132,7 +155,10 @@ object DocumentParser {
         return result.joinToString("/")
     }
 
-    private fun extractEpub(file: File, filename: String): Imported = ZipFile(file).use { zip ->
+    private fun extractEpub(
+        file: File, filename: String,
+        report: (String, Int, Int, String) -> Unit
+    ): Imported = ZipFile(file).use { zip ->
         val container = zip.getEntry("META-INF/container.xml") ?: error("EPUB container.xml missing")
         val rootDoc = readXml(zip.getInputStream(container), 100_000)
         val root = rootDoc.getElementsByTagNameNS("*", "rootfile").item(0) as? Element
@@ -205,6 +231,7 @@ object DocumentParser {
         for (i in 0 until spine.length) {
             require(chapters.size <= 4000) { "EPUB exceeds 4000 reading sections" }
             val ref = spine.item(i) as Element
+            report("Extracting EPUB chapters", i + 1, spine.length, "Reading chapters in order")
             if (ref.getAttribute("linear").equals("no", ignoreCase = true)) continue
             val item = manifest[ref.getAttribute("idref")] ?: continue
             if (item.properties.split(' ').contains("nav")) continue
@@ -237,7 +264,10 @@ object DocumentParser {
         Imported(bookTitle, chapters, author, cover)
     }
 
-    private fun extractDocx(file: File, filename: String): Imported = ZipFile(file).use { zip ->
+    private fun extractDocx(
+        file: File, filename: String,
+        report: (String, Int, Int, String) -> Unit
+    ): Imported = ZipFile(file).use { zip ->
         val entry = zip.getEntry("word/document.xml") ?: error("Invalid DOCX package")
         val doc = readXml(zip.getInputStream(entry), 25_000_000)
         val paragraphs = doc.getElementsByTagNameNS("*", "p")
@@ -262,6 +292,9 @@ object DocumentParser {
             }
         }
         for (i in 0 until paragraphs.length) {
+            if (i % 25 == 0 || i == paragraphs.length - 1)
+                report("Extracting DOCX paragraphs", i + 1, paragraphs.length,
+                    "Finding headings and preserving original text")
             val paragraph = paragraphs.item(i) as Element
             val text = StringBuilder().also { collect(paragraph, it) }.toString().trim()
             if (text.isBlank()) continue
@@ -280,11 +313,17 @@ object DocumentParser {
         Imported(filename, chapters)
     }
 
-    private fun extractPdf(context: Context, file: File, filename: String): Imported {
+    private fun extractPdf(
+        context: Context, file: File, filename: String,
+        report: (String, Int, Int, String) -> Unit
+    ): Imported {
+        report("Opening PDF", 0, 0, "Loading page structure")
         PDFBoxResourceLoader.init(context.applicationContext)
         PDDocument.load(file).use { pdf ->
             require(!pdf.isEncrypted) { "Password-protected PDF; unlock before importing" }
             require(pdf.numberOfPages <= 1500) { "PDF exceeds 1500 pages" }
+            report("Reading PDF pages", 0, pdf.numberOfPages,
+                "Found " + pdf.numberOfPages + " pages")
             val parts = mutableListOf<Chapter>()
             val stripper = PDFTextStripper().apply { sortByPosition = true }
             var first = 1
@@ -297,6 +336,9 @@ object DocumentParser {
                 if (content.isNotBlank()) parts.add(
                     Chapter(if (first == last) "Page $first" else "Pages $first–$last", content)
                 )
+                report("Extracting PDF text", last, pdf.numberOfPages,
+                    "Processed page " + last + " of " + pdf.numberOfPages +
+                        " • " + parts.size + " readable sections")
                 first = last + 1
             }
             require(parts.isNotEmpty()) {
