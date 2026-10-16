@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Looper
 import android.widget.TextView
-import androidx.test.core.app.ApplicationProvider
+import org.robolectric.RuntimeEnvironment
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -20,7 +20,7 @@ import org.robolectric.annotation.Config
 class ReaderPlaybackRegressionTest {
     @Test
     fun playbackStatusUpdatesCurrentPassageWithoutCrashingReader() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
+        val context = RuntimeEnvironment.getApplication()
         val book = BookStore(context).save(
             "Playback Crash Regression", listOf(Chapter("Chapter 1", "Kokoro reads this sentence."))
         )
