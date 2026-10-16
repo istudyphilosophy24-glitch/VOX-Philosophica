@@ -1,6 +1,25 @@
-# VOX PHILOSOPHICA 0.4.1 — Playback Hotfix + Reader & Listening Studio
+# VOX PHILOSOPHICA 0.5.0 — Observable Import & Kokoro Diagnostic Edition
 
 Native, offline-first Android app for philosophical and academic audiobooks.
+
+## New in 0.5.0
+
+### Book imports you can actually monitor
+
+- Persistent **Importing ebook** dialog shows local copy progress, EPUB chapters, DOCX paragraphs, PDF page counts, extraction, and library saving.
+- The user can request **Cancel import**; it takes effect at the next safe parser checkpoint.
+- Successful import displays the title, section count, word count and elapsed time, with an Open Reader option.
+- A failure shows the exact parser message instead of an unexplained disappearance. Home/Library retain the last import result.
+- PDFBox uses bounded, disk-backed scratch storage to help with larger text PDFs. If there is no selectable text in the document, an experimental bundled **offline Latin OCR** pass reads scanned PDFs up to 250 pages. It reports each recognized page. Mixed text-and-image PDFs may need more advanced layout-aware handling.
+- Filename fallback handles document providers that omit the usual display-name field.
+
+### Kokoro diagnostics and stability
+
+- Neural inference runs in an independent Android `:tts` process. If the native runtime crashes, it should not force-close the reader UI.
+- A one-tap **Test English Kokoro** / **Test Kokoro 1.1** in Voice Studio generates a short real sample and plays the resulting WAV, separately from any book.
+- Preparation reports unpacked megabytes and checks disk space. Cross-process file locking avoids concurrent extraction races.
+- The native engine uses the official English phonemizer configuration and validates speaker count and WAV sample integrity.
+- CI includes actual **CPU synthesis** from both pinned Kokoro models, plus Android regression tests. Desktop CI inference is *not* proof of flawless ARM64 playback on every physical Android phone.
 
 ## 0.4.1 playback crash fix
 
