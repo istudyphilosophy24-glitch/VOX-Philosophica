@@ -1,0 +1,1 @@
+VOX 0.5.0 — Build with PDF import progress, offline OCR, separate Kokoro process, real native inference tests.
