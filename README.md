@@ -1,42 +1,46 @@
-# VOX PHILOSOPHICA 0.3.0 · Integrated Kokoro Edition
+# VOX PHILOSOPHICA 0.4.0 — Reader & Listening Studio
 
-A native Android audiobook reader with **two Kokoro neural text-to-speech models embedded in one APK**. Designed for offline philosophical and academic reading.
+Native, offline-first Android app for philosophical and academic audiobooks.
 
-## Audio models included at build time
+## New in 0.4: document engine
 
-- **Kokoro INT8 v1.0**: 53 total speakers, of which 28 speak English. Includes four British male narrator choices. Default: British George (speaker 26).
-- **Kokoro INT8 v1.1-zh**: 103 speakers; 3 English voices and 100 Chinese voices. This newer variant does **not** replace the richer English voice inventory of v1.0.
-- Both archives are fetched by GitHub Actions directly from Sherpa-ONNX upstream releases, verified against pinned SHA-256 digests, then packaged unmodified into `assets/`.
-- App unpacks the archives once to private storage at first run. No model download, internet connection, API account, or per-character charges are needed on the phone.
+- **EPUB** — reads chapters in spine order, EPUB 3 nav / EPUB 2 NCX titles, OPF book titles and creator metadata, common cover formats, relative resource paths, paragraph/heading/list boundaries.
+- **PDF** — extracts *existing selectable text* in page-ordered groups of eight using PDFBox Android. Image-only scanned pages, complex mathematics and multi-column layouts may still need specialist OCR/layout processing.
+- **DOCX** — reads paragraphs, tabs and line breaks; attempts to split on named Heading/Title paragraph styles.
+- **TXT, Markdown, HTML** — supported for locally imported books.
+- Guardrails include bounded archive extraction, disabled XML external entities, document-size limits and private storage. The app does not upload books.
 
-## What is optimized
+### New music-library-inspired interface
 
-- Quantized INT8 model files reduce model storage and CPU inference demands versus the FP32 variants.
-- Arm64-native APK target for modern 64-bit Android phones.
-- Accent-aware Kokoro pronunciation lexicon selection (British/US when provided in the archive).
-- Source-preserving punctuation normalization for narration, sentence/chapter chunking, and per-voice WAV caching.
-- Native foreground playback with headset/notification controls.
-- Earlier Android EPUB/DOCX import XML compatibility fix remains included.
+- Black/charcoal/green theme with original VOX identity (not Spotify branding).
+- Home listening hero, recently added book artwork shelf and academic studio callout.
+- Searchable library with cover artwork, metadata, section counts and book removal.
+- Persistent mini-player and saved book/chapter state.
+- Dedicated album-style book player, voice configuration, chapter chooser, reading-text drawer, progress status and next-sections preview.
 
-**Neural network weights have NOT been fine-tuned.** Improved voice choices, quantized deployment, lexicon selection, and narration processing are engineering improvements, not evidence of retraining or demonstrably superior subjective listening quality. Training would require a separate licensed speech corpus, GPU resources, evaluation and model conversion pipeline.
+## Kokoro offline speech (preserved)
 
-## Build and verify
+Includes **INT8 Kokoro v1.0 and v1.1** archives packed into the same ARM64 debug APK, downloaded and hash-validated by GitHub Actions at build time. No model download is required *after* installing the APK. Initial use unpacks a chosen model to private storage; it needs substantial free space. v1.0 offers 28 English voices (including British male options); v1.1 includes three English voices plus Mandarin voices.
 
-In GitHub Actions run **Build Integrated Kokoro APK** on the main branch. The pipeline:
+Weights are **not additionally trained or fine-tuned**. Voice selection, preprocessing and per-voice audio caching are software optimizations.
 
-1. Installs Android SDK and Gradle
-2. Downloads and SHA-256-verifies the two official model archives
-3. Compiles the Android debug APK and checks both are embedded
-4. Publishes artifact `VOX-PHILOSOPHICA-0.3.0-INTEGRATED-ARM64`
+## Build
 
-A standalone APK extracted from that artifact contains all data necessary for offline inference. The binary is large because the model weights are embedded; first use needs additional storage to unpack both models. The APK is targeted at **arm64-v8a** Android devices and is not a universal 32-bit release.
+GitHub Actions → **Build VOX 0.4 Reader & UI** → Run workflow. The workflow downloads both pinned Kokoro archives, builds the Android APK, verifies the embedded model assets and uploads it as a downloadable artifact. This version targets 64-bit ARM Android devices, with minSdk 26.
 
-## Physical-device checklist
+## Known limitations and testing
 
-After sideloading, **test on the target device**: import a licensed EPUB; wait for Kokoro model preparation; open the reader; select *Kokoro Studio* and British George; start narration; switch to *Kokoro Latest* and verify English voice playback; lock screen and test media controls; play the same passage twice to verify WAV caching.
+- A successful GitHub build verifies compilation and APK structure, **not** uninterrupted speech on your specific device.
+- PDF OCR, tables, mathematical formula voicing, synchronized word highlighting, reflowable embedded images and footnote navigation are not yet implemented.
+- Some EPUBs with DRM, malformed XML or unusual encrypted/remote resources may not be readable.
+- First Kokoro setup can require hundreds of MB of storage and CPU time.
+- Continuous chapter narration currently prepares uncached chunks as needed and may pause between synthesis chunks. Playback is not yet guaranteed gapless.
+- Debug builds may be signed with different keys from older releases. Back up important local books before uninstalling an earlier APK.
 
-GitHub successful compilation and APK asset validation alone **do not prove** that both neural engines work continuously or at real-time speed on a specific phone.
+## Third-party packages
 
-## Data and licensing
+- Sherpa-ONNX / Kokoro: https://github.com/k2-fsa/sherpa-onnx
+- HTML parser: https://jsoup.org/
+- PDFBox Android: https://github.com/TomRoush/PdfBox-Android
 
-Book texts and cached narration remain on-device. Models are sourced from the official [sherpa-onnx model releases](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models); their upstream licenses and embedded component licenses apply, including eSpeak NG phonemization resources. This repository contains application source, not third-party copyrighted books.
+Only process books you own or have permission to access. The app does not include proprietary ElevenReader services or copyrighted books.
