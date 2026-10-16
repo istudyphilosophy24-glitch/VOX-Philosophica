@@ -329,8 +329,18 @@ class MainActivity : Activity() {
         holder.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
         val paused = pref.getBoolean("paused", true)
         holder.addView(action(if (paused) "▶" else "Ⅱ", false) {
-            NarrationService.dispatch(this,
-                if (paused) NarrationService.RESUME else NarrationService.PAUSE)
+            if (paused && !pref.getBoolean("active", false)) {
+                NarrationService.dispatch(this, NarrationService.START) {
+                    putExtra("bookId", book.id)
+                    putExtra("chapter", pref.getInt("chapter", 0))
+                    putExtra("engine", pref.getString("engine", "kokoro-english"))
+                    putExtra("speaker", pref.getInt("speaker", 26))
+                    putExtra("speed", pref.getFloat("speed", 1f))
+                }
+            } else {
+                NarrationService.dispatch(this,
+                    if (paused) NarrationService.RESUME else NarrationService.PAUSE)
+            }
         }.apply {
             background = Palette.shape(Palette.SOFT_GREEN, dp(30).toFloat())
             textSize = 20f
