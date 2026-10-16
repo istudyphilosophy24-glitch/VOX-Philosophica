@@ -1,0 +1,8 @@
+VOX PHILOSOPHICA 0.1.0
+Implementation: Native Android source created
+Chunker smoke tests: PASS (5 cases)
+WAV writer test: PASS (24 kHz, 16-bit mono)
+Android build: NOT RUN (Android SDK/Gradle artifacts not available in environment)
+Android device test: NOT RUN
+APK: NOT CREATED
+Use README.md and .github/workflows/android.yml to build externally.
