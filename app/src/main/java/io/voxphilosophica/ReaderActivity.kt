@@ -48,9 +48,12 @@ class ReaderActivity : Activity() {
             val source = intent.getStringExtra("bookId")
             if (source != null && source != book.id) return
             val msg = intent.getStringExtra("message") ?: return
+            if (!::status.isInitialized) return
             status.text = msg
             val snippet = intent.getStringExtra("segment").orEmpty()
-            excerpt.text = snippet.take(250).ifBlank { "Your chapter is ready to play." }
+            if (::excerpt.isInitialized) {
+                excerpt.text = snippet.take(250).ifBlank { "Your chapter is ready to play." }
+            }
             val chunk = intent.getIntExtra("chunk", 0)
             val total = intent.getIntExtra("total", 0)
             val section = intent.getIntExtra("chapter", 0)
@@ -59,8 +62,9 @@ class ReaderActivity : Activity() {
                 progressLabel.text = "Passage " + (chunk + 1) + " of " + total
             }
             paused = intent.getBooleanExtra("paused", false)
-            playToggle.text = if (paused) "▶" else "Ⅱ"
-            if (section in book.chapters.indices && chapterSpinner.selectedItemPosition != section) {
+            if (::playToggle.isInitialized) playToggle.text = if (paused) "▶" else "Ⅱ"
+            if (::chapterSpinner.isInitialized && section in book.chapters.indices &&
+                chapterSpinner.selectedItemPosition != section) {
                 chapterSpinner.setSelection(section)
             }
         }
@@ -171,6 +175,12 @@ class ReaderActivity : Activity() {
         status = text("Select Play to narrate this chapter.", 13f, Palette.GREEN)
         status.gravity = Gravity.CENTER
         main.addFull(status)
+        main.gap(this, 8)
+        excerpt = text("The current narrated passage will appear here.", 12f, Palette.MUTED).apply {
+            maxLines = 4
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        main.addFull(excerpt)
         main.gap(this, 12)
 
         val sectionTitle = text("CHAPTER / SECTION", 12f, Palette.MUTED, true)
