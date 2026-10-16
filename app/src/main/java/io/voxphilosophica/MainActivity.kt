@@ -16,6 +16,7 @@ import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
     private val importer = Executors.newSingleThreadExecutor()
+    private val modelWorker = Executors.newSingleThreadExecutor()
     private lateinit var root: LinearLayout
     private lateinit var library: LinearLayout
     private lateinit var modelStatus: TextView
@@ -59,39 +60,18 @@ class MainActivity : Activity() {
         root.addFull(importCard)
         root.gap(this, 16)
 
-        val modelCard = section("OFFLINE VOICE ENGINE")
+        val modelCard = section("INTEGRATED KOKORO STUDIO")
         modelCard.gap(this, 11)
-        modelStatus = text("Checking Kokoro model…", 14f, Palette.WHITE)
+        modelStatus = text("Checking built-in narration models…", 14f, Palette.WHITE)
         modelCard.addView(modelStatus)
         modelCard.gap(this, 10)
-        modelCard.addFull(action("Install Kokoro · one-time large download", false) {
-            if (downloading) return@action
-            AlertDialog.Builder(this).setTitle("Download Kokoro?")
-                .setMessage("Downloads a large open-weight speech model from the official Sherpa-ONNX GitHub release. Wi-Fi and hundreds of MB of free storage are recommended. Android's installed speech engine works without it.")
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Download") { _, _ -> downloadModel() }.show()
+        modelCard.addFull(action("Prepare included voice models · offline", false) {
+            prepareIntegratedModels()
         })
         modelCard.gap(this, 9)
-        modelCard.addFull(action("Import Kokoro archive from Downloads", false) {
-            if (downloading) return@action
-            val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = "*/*"
-            }
-            startActivityForResult(picker, REQUEST_KOKORO_ARCHIVE)
-        })
-        modelCard.gap(this, 9)
-        modelCard.addFull(action("Download archive using browser", false) {
-            val browser = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(ModelInstaller.MODEL_URL))
-            try { startActivity(browser) }
-            catch (_: android.content.ActivityNotFoundException) {
-                modelStatus.text = "No web browser found. You can use the automatic installer instead."
-            }
-        })
-        modelCard.gap(this, 9)
-        modelCard.addView(text("If the in-app download fails, use the browser download and then Import Kokoro archive. A partial in-app download is saved so Retry can resume it.", 12f, Palette.MUTED))
-        modelCard.gap(this, 9)
-        modelCard.addView(text("Kokoro synthesis is local, with no pay-per-hour charge. The voice model is not included in the APK.", 12f, Palette.MUTED))
+        modelCard.addView(text("Two quantized Kokoro neural models are already inside this APK. No GitHub download, API key, or subscription is required. Preparation copies them into private storage for speech synthesis.", 12f, Palette.MUTED))
+        modelCard.gap(this, 8)
+        modelCard.addView(text("Kokoro v1.0: 28 English voices, including four British male narrators. Kokoro v1.1: 103 voices, principally Chinese with three English voices. First use needs additional free storage.", 12f, Palette.MUTED))
         root.addFull(modelCard)
         root.gap(this, 19)
         root.addView(text("YOUR BOOKS", 15f, Palette.GOLD, true))
@@ -100,22 +80,46 @@ class MainActivity : Activity() {
         root.addFull(library)
         updateModel()
         refreshBooks()
+        prepareIntegratedModels()
     }
     private fun updateModel() {
-        modelStatus.text = if (ModelInstaller(this).installed) "● Kokoro installed — local narration is available"
-        else "○ Kokoro not installed — Android speech engine is available"
-        modelStatus.setTextColor(if (ModelInstaller(this).installed) Palette.GREEN else Palette.MUTED)
+        val installer = ModelInstaller(this)
+        val english = installer.installed(ModelInstaller.ENGLISH)
+        val latest = installer.installed(ModelInstaller.LATEST)
+        modelStatus.text = "English audiobook engine: " + (if (english) "READY" else "preparing") +
+            "\nLatest multilingual engine: " + (if (latest) "READY" else "preparing") +
+            "\nBoth models included in APK; speech runs without internet."
+        modelStatus.setTextColor(if (english) Palette.GREEN else Palette.MUTED)
     }
-    private fun downloadModel() {
+    private fun prepareIntegratedModels() {
+        if (downloading) return
+        if (ModelInstaller(this).installed(ModelInstaller.ENGLISH) &&
+            ModelInstaller(this).installed(ModelInstaller.LATEST)) {
+            updateModel()
+            return
+        }
         downloading = true
-        message.text = "Downloading voice engine…"
-        importer.execute {
+        modelStatus.text = "Unpacking built-in Kokoro models · this can take a few minutes…"
+        modelWorker.execute {
             try {
-                ModelInstaller(this).install { progress -> runOnUiThread { modelStatus.text = progress } }
-                runOnUiThread { updateModel(); message.text = "Kokoro installed. Select it inside a book." }
+                val installer = ModelInstaller(this)
+                installer.install(ModelInstaller.ENGLISH) { status ->
+                    runOnUiThread { modelStatus.text = status }
+                }
+                installer.install(ModelInstaller.LATEST) { status ->
+                    runOnUiThread { modelStatus.text = status }
+                }
+                runOnUiThread { updateModel() }
             } catch (error: Exception) {
-                runOnUiThread { modelStatus.text = "Install failed: ${error.message}" }
-            } finally { runOnUiThread { downloading = false } }
+                runOnUiThread {
+                    updateModel()
+                    modelStatus.text = modelStatus.text.toString() +
+                        "\nModel preparation error: " + (error.message ?: "unknown error") +
+                        ". Free storage and tap Prepare to retry."
+                }
+            } finally {
+                runOnUiThread { downloading = false }
+            }
         }
     }
     private fun refreshBooks() {
@@ -188,5 +192,5 @@ class MainActivity : Activity() {
             }
         }
     }
-    override fun onDestroy() { importer.shutdown(); super.onDestroy() }
+    override fun onDestroy() { importer.shutdown(); modelWorker.shutdown(); super.onDestroy() }
 }
