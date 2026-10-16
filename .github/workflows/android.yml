@@ -3,6 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths: ['app/RELEASE_TRIGGER.txt', '.github/workflows/android.yml']
   pull_request:
 permissions:
   contents: read
