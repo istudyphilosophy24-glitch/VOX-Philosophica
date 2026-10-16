@@ -7,8 +7,8 @@ android {
         minSdk = 26
         targetSdk = 34
         ndk { abiFilters += listOf("arm64-v8a") }
-        versionCode = 5
-        versionName = "0.4.1"
+        versionCode = 6
+        versionName = "0.5.0"
     }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions {
