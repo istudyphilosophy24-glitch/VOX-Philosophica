@@ -7,6 +7,11 @@ import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.text.PDFTextStripper
+import com.tom_roush.pdfbox.rendering.PDFRenderer
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.google.mlkit.vision.common.InputImage
+import com.google.android.gms.tasks.Tasks
 import org.jsoup.Jsoup
 import org.w3c.dom.Element
 import org.w3c.dom.Node
@@ -345,8 +350,52 @@ object DocumentParser {
                         " • " + parts.size + " readable sections")
                 first = last + 1
             }
+            if (parts.isEmpty()) {
+                // Bundled ML Kit model; no network download or server OCR required.
+                require(pdf.numberOfPages <= 250) {
+                    "This scanned PDF has " + pdf.numberOfPages +
+                    " pages. Offline OCR is limited to 250 pages per import; split the PDF."
+                }
+                report("Starting offline OCR", 0, pdf.numberOfPages,
+                    "No selectable text detected. Preparing image recognition…")
+                val renderer = PDFRenderer(pdf)
+                val recognition = TextRecognition.getClient(
+                    TextRecognizerOptions.DEFAULT_OPTIONS)
+                try {
+                    var group = StringBuilder()
+                    var groupStart = 1
+                    for (pageIndex in 0 until pdf.numberOfPages) {
+                        report("Recognizing scanned PDF pages", pageIndex + 1,
+                            pdf.numberOfPages,
+                            "OCR page " + (pageIndex + 1) + " of " + pdf.numberOfPages)
+                        val image = renderer.renderImageWithDPI(pageIndex, 110f)
+                        try {
+                            val input = InputImage.fromBitmap(image, 0)
+                            val text = Tasks.await(recognition.process(input)).text.trim()
+                            if (text.isNotBlank()) group.append(text).append("\n\n")
+                        } finally {
+                            image.recycle()
+                        }
+                        if ((pageIndex + 1) % 6 == 0 || pageIndex == pdf.numberOfPages - 1) {
+                            if (group.isNotBlank()) {
+                                parts.add(Chapter(
+                                    "OCR pages " + groupStart + "–" + (pageIndex + 1),
+                                    group.toString().trim()))
+                            }
+                            group = StringBuilder()
+                            groupStart = pageIndex + 2
+                        }
+                    }
+                } catch (e: Exception) {
+                    throw IllegalArgumentException(
+                        "Offline OCR could not recognize the scanned PDF: " +
+                            (e.message ?: "unknown error"), e)
+                } finally {
+                    recognition.close()
+                }
+            }
             require(parts.isNotEmpty()) {
-                "PDF contains no selectable text. Scanned pages require OCR."
+                "No readable text was found in this PDF, even after offline OCR."
             }
             return Imported(filename, parts)
         }
