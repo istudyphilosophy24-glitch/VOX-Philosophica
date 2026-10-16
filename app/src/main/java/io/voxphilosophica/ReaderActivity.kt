@@ -45,7 +45,7 @@ class ReaderActivity : Activity() {
         render()
     }
     private fun render() {
-        val scroller = ScrollView(this).apply { setBackgroundColor(Palette.BG); fillViewport = true }
+        val scroller = ScrollView(this).apply { setBackgroundColor(Palette.BG); isFillViewport = true }
         val content = column().apply { setPadding(dp(21), dp(28), dp(21), dp(30)) }
         scroller.addView(content); setContentView(scroller)
         content.addView(action("←  Back to library", false) { finish() })
