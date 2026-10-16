@@ -98,6 +98,13 @@ class NarrationService : Service() {
             mode = intent.getStringExtra("engine") ?: "system"
             speaker = intent.getIntExtra("speaker", 0)
             speechSpeed = intent.getFloatExtra("speed", 1f).coerceIn(0.7f, 1.5f)
+            getSharedPreferences("vox_playback", MODE_PRIVATE).edit()
+                .putString("book_id", book!!.id)
+                .putString("engine", mode)
+                .putInt("speaker", speaker)
+                .putFloat("speed", speechSpeed)
+                .putBoolean("active", true)
+                .apply()
             parts = book!!.chapters.flatMapIndexed { ch, chapter ->
                 Chunker.split(chapter.body).map { Part(ch, it, chapter.title) }
             }
@@ -213,11 +220,20 @@ class NarrationService : Service() {
         schedule(next)
     }
     private fun finishBook() {
+        paused = true
         showStatus("Book completed")
         shutdown()
         stopSelf()
     }
     private fun showStatus(message: String, chapter: Int = parts.getOrNull(index)?.chapter ?: 0) {
+        if (book != null) {
+            getSharedPreferences("vox_playback", MODE_PRIVATE).edit()
+                .putString("book_id", book!!.id)
+                .putString("message", message)
+                .putInt("chapter", chapter)
+                .putBoolean("paused", paused)
+                .apply()
+        }
         val state = if (paused) PlaybackState.STATE_PAUSED else PlaybackState.STATE_PLAYING
         session?.setPlaybackState(PlaybackState.Builder()
             .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or
@@ -225,6 +241,7 @@ class NarrationService : Service() {
             .setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f).build())
         getSystemService(NotificationManager::class.java).notify(NOTIFY_ID, notification(message))
         sendBroadcast(Intent(EVENT).setPackage(packageName)
+            .putExtra("bookId", book?.id ?: "")
             .putExtra("message", message).putExtra("chunk", index)
             .putExtra("total", parts.size).putExtra("chapter", chapter)
             .putExtra("paused", paused)
@@ -269,6 +286,8 @@ class NarrationService : Service() {
         }
     }
     override fun onDestroy() {
+        getSharedPreferences("vox_playback", MODE_PRIVATE).edit()
+            .putBoolean("active", false).putBoolean("paused", true).apply()
         shutdown(); worker.shutdown()
         session?.release(); session = null
         super.onDestroy()
