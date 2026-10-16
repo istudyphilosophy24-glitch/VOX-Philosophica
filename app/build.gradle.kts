@@ -6,8 +6,9 @@ android {
         applicationId = "io.voxphilosophica"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0"
+        ndk { abiFilters += listOf("arm64-v8a") }
+        versionCode = 3
+        versionName = "0.3.0"
     }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions {
@@ -15,6 +16,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    androidResources { noCompress += listOf("bz2") }
     packaging { resources.excludes += setOf("META-INF/AL2.0", "META-INF/LGPL2.1") }
 }
 dependencies {
