@@ -23,6 +23,7 @@ class NarrationService : Service() {
     companion object {
         const val EVENT = "io.voxphilosophica.PLAYBACK_STATUS"
         const val START = "vox.START"
+        const val TEST_VOICE = "vox.TEST_VOICE"
         const val PAUSE = "vox.PAUSE"
         const val RESUME = "vox.RESUME"
         const val NEXT = "vox.NEXT"
@@ -32,7 +33,9 @@ class NarrationService : Service() {
         private const val NOTIFY_ID = 313
         fun dispatch(context: Context, action: String, extras: (Intent.() -> Unit)? = null) {
             val intent = Intent(context, NarrationService::class.java).apply { this.action = action; extras?.invoke(this) }
-            if (action == START) context.startForegroundService(intent) else context.startService(intent)
+            if (action == START || action == TEST_VOICE)
+                context.startForegroundService(intent)
+            else context.startService(intent)
         }
     }
     private data class Part(val chapter: Int, val text: String, val label: String)
@@ -89,6 +92,16 @@ class NarrationService : Service() {
                     stopSelf()
                 }
             }
+            TEST_VOICE -> {
+                try {
+                    startForegroundCompat(notification("Testing built-in Kokoro…"))
+                    testVoice(intent)
+                } catch (e: Throwable) {
+                    android.util.Log.e("VOX.Narration", "Cannot launch Kokoro diagnostic", e)
+                    showStatus("Voice test could not start: " + (e.message ?: "unknown error"))
+                    stopSelf()
+                }
+            }
             PAUSE -> pause()
             RESUME -> resume()
             NEXT -> change(index + 1)
@@ -97,6 +110,88 @@ class NarrationService : Service() {
         }
         return START_NOT_STICKY
     }
+    /** Short end-to-end on-device diagnostic independent of an imported book. */
+    private fun testVoice(intent: Intent) {
+        shutdown()
+        book = null
+        parts = emptyList()
+        paused = false
+        val generation = epoch.incrementAndGet()
+        val which = if (intent.getStringExtra("engine") == "kokoro-latest")
+            ModelInstaller.LATEST else ModelInstaller.ENGLISH
+        val sid = intent.getIntExtra("speaker", if (which == ModelInstaller.ENGLISH) 26 else 0)
+        showStatus("Voice test: checking built-in " + which + " model…")
+        worker.execute {
+            try {
+                val installer = ModelInstaller(this)
+                installer.install(which) { progress ->
+                    main.post {
+                        if (epoch.get() == generation) showStatus(progress)
+                    }
+                }
+                main.post {
+                    if (epoch.get() == generation)
+                        showStatus("Voice test: initializing Kokoro neural engine…")
+                }
+                val test = KokoroSpeechEngine(this, which, sid)
+                val wav = File(cacheDir, "vox-kokoro-diagnostic.wav")
+                try {
+                    main.post {
+                        if (epoch.get() == generation)
+                            showStatus("Voice test: synthesizing a short sample. This may take a minute…")
+                    }
+                    test.synthesize(
+                        "This is Vox Philosophica. Offline narration is ready for your library.",
+                        sid, 1f, wav
+                    )
+                    require(wav.length() > 2048L) {
+                        "Kokoro generated no usable WAV. File size: " + wav.length()
+                    }
+                } finally { test.close() }
+                main.post {
+                    if (epoch.get() != generation) return@post
+                    showStatus("Voice test succeeded. Playing generated Kokoro audio…")
+                    try {
+                        media?.release()
+                        val player = MediaPlayer()
+                        media = player
+                        player.setAudioAttributes(AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                        player.setDataSource(wav.absolutePath)
+                        player.setOnCompletionListener {
+                            showStatus("Kokoro voice test passed — offline speech played successfully.")
+                            media?.release()
+                            media = null
+                            stopSelf()
+                        }
+                        player.setOnErrorListener { _, what, extra ->
+                            showStatus("Sample playback failed: " + what + " / " + extra)
+                            stopSelf()
+                            true
+                        }
+                        player.prepare()
+                        player.start()
+                    } catch (e: Exception) {
+                        showStatus("Voice generated, but playback failed: " +
+                            (e.message ?: "audio error"))
+                        stopSelf()
+                    }
+                }
+            } catch (e: Throwable) {
+                android.util.Log.e("VOX.Narration", "Kokoro device diagnostic failed", e)
+                main.post {
+                    if (epoch.get() == generation) {
+                        showStatus("Kokoro voice test failed: " +
+                            (e.message ?: e.javaClass.simpleName) +
+                            ". Check storage or try Android installed TTS.")
+                        stopSelf()
+                    }
+                }
+            }
+        }
+    }
+
     private fun setup(intent: Intent) {
         shutdown()
         try {
