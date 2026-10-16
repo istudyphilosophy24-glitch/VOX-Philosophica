@@ -23,7 +23,6 @@ class MainActivity : Activity() {
     private lateinit var message: TextView
     private var downloading = false
     private val REQUEST_DOCUMENT = 99
-    private val REQUEST_KOKORO_ARCHIVE = 100
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         darkSystemBars()
@@ -171,25 +170,7 @@ class MainActivity : Activity() {
                     }
                 }
             }
-            REQUEST_KOKORO_ARCHIVE -> {
-                if (downloading) return
-                downloading = true
-                modelStatus.text = "Opening selected Kokoro archive…"
-                importer.execute {
-                    try {
-                        val input = contentResolver.openInputStream(uri)
-                            ?: error("Could not open the selected file")
-                        ModelInstaller(this).installFromStream(input) { progress ->
-                            runOnUiThread { modelStatus.text = progress }
-                        }
-                        runOnUiThread { updateModel(); message.text = "Kokoro installed from downloaded archive." }
-                    } catch (error: Exception) {
-                        runOnUiThread { modelStatus.text = "Archive import failed: ${error.message}" }
-                    } finally {
-                        runOnUiThread { downloading = false }
-                    }
-                }
-            }
+
         }
     }
     override fun onDestroy() { importer.shutdown(); modelWorker.shutdown(); super.onDestroy() }
