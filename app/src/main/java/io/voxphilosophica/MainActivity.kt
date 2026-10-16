@@ -22,6 +22,7 @@ class MainActivity : Activity() {
     private lateinit var message: TextView
     private var downloading = false
     private val REQUEST_DOCUMENT = 99
+    private val REQUEST_KOKORO_ARCHIVE = 100
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         darkSystemBars()
@@ -71,7 +72,26 @@ class MainActivity : Activity() {
                 .setPositiveButton("Download") { _, _ -> downloadModel() }.show()
         })
         modelCard.gap(this, 9)
-        modelCard.addView(text("Kokoro synthesis is local, with no pay-per-hour charge. The voice model is not included in the source archive.", 12f, Palette.MUTED))
+        modelCard.addFull(action("Import Kokoro archive from Downloads", false) {
+            if (downloading) return@action
+            val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+            }
+            startActivityForResult(picker, REQUEST_KOKORO_ARCHIVE)
+        })
+        modelCard.gap(this, 9)
+        modelCard.addFull(action("Download archive using browser", false) {
+            val browser = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(ModelInstaller.MODEL_URL))
+            try { startActivity(browser) }
+            catch (_: android.content.ActivityNotFoundException) {
+                modelStatus.text = "No web browser found. You can use the automatic installer instead."
+            }
+        })
+        modelCard.gap(this, 9)
+        modelCard.addView(text("If the in-app download fails, use the browser download and then Import Kokoro archive. A partial in-app download is saved so Retry can resume it.", 12f, Palette.MUTED))
+        modelCard.gap(this, 9)
+        modelCard.addView(text("Kokoro synthesis is local, with no pay-per-hour charge. The voice model is not included in the APK.", 12f, Palette.MUTED))
         root.addFull(modelCard)
         root.gap(this, 19)
         root.addView(text("YOUR BOOKS", 15f, Palette.GOLD, true))
@@ -129,19 +149,42 @@ class MainActivity : Activity() {
     @Deprecated("Modern activity results can replace this when integrating AppCompat")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQUEST_DOCUMENT || resultCode != RESULT_OK) return
+        if (resultCode != RESULT_OK) return
         val uri = data?.data ?: return
-        message.text = "Importing document…"
-        importer.execute {
-            try {
-                val parsed = DocumentParser.import(this, uri)
-                val book = BookStore(this).save(parsed.title, parsed.chapters)
-                runOnUiThread {
-                    message.text = "Imported ${book.title} successfully."
-                    refreshBooks()
+        when (requestCode) {
+            REQUEST_DOCUMENT -> {
+                message.text = "Importing document…"
+                importer.execute {
+                    try {
+                        val parsed = DocumentParser.import(this, uri)
+                        val book = BookStore(this).save(parsed.title, parsed.chapters)
+                        runOnUiThread {
+                            message.text = "Imported ${book.title} successfully."
+                            refreshBooks()
+                        }
+                    } catch (error: Exception) {
+                        runOnUiThread { message.text = "Import failed: ${error.message}" }
+                    }
                 }
-            } catch (error: Exception) {
-                runOnUiThread { message.text = "Import failed: ${error.message}" }
+            }
+            REQUEST_KOKORO_ARCHIVE -> {
+                if (downloading) return
+                downloading = true
+                modelStatus.text = "Opening selected Kokoro archive…"
+                importer.execute {
+                    try {
+                        val input = contentResolver.openInputStream(uri)
+                            ?: error("Could not open the selected file")
+                        ModelInstaller(this).installFromStream(input) { progress ->
+                            runOnUiThread { modelStatus.text = progress }
+                        }
+                        runOnUiThread { updateModel(); message.text = "Kokoro installed from downloaded archive." }
+                    } catch (error: Exception) {
+                        runOnUiThread { modelStatus.text = "Archive import failed: ${error.message}" }
+                    } finally {
+                        runOnUiThread { downloading = false }
+                    }
+                }
             }
         }
     }
