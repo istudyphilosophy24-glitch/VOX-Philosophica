@@ -57,27 +57,59 @@ class SystemSpeechEngine(context: Context) : SpeechEngine {
     override fun close() { tts.stop(); tts.shutdown() }
 }
 
-/** Native local model. All data stays on device. Uses sherpa-onnx's official Android AAR. */
-class KokoroSpeechEngine(context: Context) : SpeechEngine {
+/**
+ * INT8 Kokoro models bundled inside the APK. No external download is involved.
+ * Only one native model is loaded into memory at a time.
+ */
+class KokoroSpeechEngine(
+    context: Context,
+    which: String = ModelInstaller.ENGLISH,
+    voiceId: Int = 26
+) : SpeechEngine {
     private val engine: OfflineTts
+
     init {
-        val dir = ModelInstaller(context).modelDir
-        require(ModelInstaller(context).installed) { "Kokoro model not installed" }
-        engine = OfflineTts(config = OfflineTtsConfig(model = OfflineTtsModelConfig(
-            kokoro = OfflineTtsKokoroModelConfig(
-                model = File(dir, "model.int8.onnx").absolutePath,
-                voices = File(dir, "voices.bin").absolutePath,
-                tokens = File(dir, "tokens.txt").absolutePath,
-                dataDir = File(dir, "espeak-ng-data").absolutePath
-            ), numThreads = 2, debug = false, provider = "cpu"
-        )))
+        val installer = ModelInstaller(context)
+        require(installer.installed(which)) {
+            "Bundled model was not prepared. Reopen the library and prepare integrated voices."
+        }
+        val dir = installer.modelDir(which)
+        val british = if (which == ModelInstaller.LATEST) voiceId == 2 else voiceId in 20..27
+        val accentLexicon = File(dir,
+            if (british) "lexicon-gb-en.txt" else "lexicon-us-en.txt")
+        val englishLexicon = if (accentLexicon.isFile) accentLexicon
+            else File(dir, "lexicon-us-en.txt")
+        val chineseLexicon = File(dir, "lexicon-zh.txt")
+        val lexicons = listOf(englishLexicon, chineseLexicon)
+            .filter { it.isFile }.joinToString(",") { it.absolutePath }
+        engine = OfflineTts(
+            config = OfflineTtsConfig(
+                model = OfflineTtsModelConfig(
+                    kokoro = OfflineTtsKokoroModelConfig(
+                        model = File(dir, "model.int8.onnx").absolutePath,
+                        voices = File(dir, "voices.bin").absolutePath,
+                        tokens = File(dir, "tokens.txt").absolutePath,
+                        dataDir = File(dir, "espeak-ng-data").absolutePath,
+                        lexicon = lexicons
+                    ),
+                    numThreads = 2,
+                    debug = false,
+                    provider = "cpu"
+                )
+            )
+        )
     }
+
     override fun synthesize(text: String, speaker: Int, speed: Float, output: File) {
         val numSpeakers = engine.numSpeakers().coerceAtLeast(1)
-        val generated = engine.generate(text, sid = speaker.coerceIn(0, numSpeakers - 1), speed = speed)
+        val generated = engine.generate(
+            NarrationDirector.forSpeech(text),
+            sid = speaker.coerceIn(0, numSpeakers - 1),
+            speed = speed
+        )
         require(generated.samples.isNotEmpty()) { "Kokoro generated no audio" }
         WavWriter.save(output, generated.samples, generated.sampleRate)
     }
+
     override fun close() { engine.release() }
 }
-
