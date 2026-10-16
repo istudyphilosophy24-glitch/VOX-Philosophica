@@ -30,7 +30,7 @@ class MainActivity : Activity() {
         render()
     }
     private fun render() {
-        val scroller = ScrollView(this).apply { setBackgroundColor(Palette.BG); fillViewport = true }
+        val scroller = ScrollView(this).apply { setBackgroundColor(Palette.BG); isFillViewport = true }
         root = column().apply { setPadding(dp(22), dp(34), dp(22), dp(30)) }
         scroller.addView(root); setContentView(scroller)
         root.addView(text("VOX", 40f, Palette.GOLD, true))
