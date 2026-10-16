@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import org.jsoup.Jsoup
 import org.w3c.dom.Element
@@ -319,7 +320,10 @@ object DocumentParser {
     ): Imported {
         report("Opening PDF", 0, 0, "Loading page structure")
         PDFBoxResourceLoader.init(context.applicationContext)
-        PDDocument.load(file).use { pdf ->
+        PDDocument.load(
+            file, MemoryUsageSetting.setupMixed(32L * 1024 * 1024)
+                .setTempDir(context.cacheDir)
+        ).use { pdf ->
             require(!pdf.isEncrypted) { "Password-protected PDF; unlock before importing" }
             require(pdf.numberOfPages <= 1500) { "PDF exceeds 1500 pages" }
             report("Reading PDF pages", 0, pdf.numberOfPages,
