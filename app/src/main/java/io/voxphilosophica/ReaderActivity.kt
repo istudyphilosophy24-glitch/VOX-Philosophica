@@ -322,12 +322,20 @@ class ReaderActivity : Activity() {
             ?: voices.first().speakerId
         paused = false
         playToggle.text = "Ⅱ"
-        NarrationService.dispatch(this, NarrationService.START) {
-            putExtra("bookId", book.id)
-            putExtra("chapter", chapterSpinner.selectedItemPosition)
-            putExtra("engine", mode)
-            putExtra("speaker", id)
-            putExtra("speed", (70 + speedSeek.progress) / 100f)
+        try {
+            status.text = "Starting audiobook…"
+            NarrationService.dispatch(this, NarrationService.START) {
+                putExtra("bookId", book.id)
+                putExtra("chapter", chapterSpinner.selectedItemPosition)
+                putExtra("engine", mode)
+                putExtra("speaker", id)
+                putExtra("speed", (70 + speedSeek.progress) / 100f)
+            }
+        } catch (e: RuntimeException) {
+            paused = true
+            playToggle.text = "▶"
+            status.text = "Cannot start audiobook: " + (e.message ?: e.javaClass.simpleName)
+            android.util.Log.e("VOX.Player", "Foreground narration service failed", e)
         }
     }
 
