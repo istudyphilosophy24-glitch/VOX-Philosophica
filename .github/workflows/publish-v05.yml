@@ -1,0 +1,50 @@
+name: Publish VOX 0.5 Direct APK
+on:
+  workflow_run:
+    workflows: ["Build VOX 0.5 Import and Kokoro Repair"]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+jobs:
+  release:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Retrieve tested APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$RUN_ID" ]]; then
+            RUN_ID=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow android.yml \
+              --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          fi
+          mkdir -p release
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name VOX-PHILOSOPHICA-v0.5.0-REPAIRS-ARM64 --dir release
+          test -s release/app-debug.apk
+          unzip -Z1 release/app-debug.apk | grep -qx 'assets/kokoro-v1_0.tar.bz2'
+          unzip -Z1 release/app-debug.apk | grep -qx 'assets/kokoro-v1_1.tar.bz2'
+          unzip -Z1 release/app-debug.apk | grep -q 'lib/arm64-v8a/libsherpa-onnx-jni.so'
+          mv release/app-debug.apk release/VOX-PHILOSOPHICA-v0.5.0-OFFLINE.apk
+          sha256sum release/VOX-PHILOSOPHICA-v0.5.0-OFFLINE.apk
+      - name: Publish APK as direct GitHub asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=v0.5.0
+          APK=release/VOX-PHILOSOPHICA-v0.5.0-OFFLINE.apk
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" \
+              --title "VOX PHILOSOPHICA 0.5.0 — Import & Kokoro Repairs" \
+              --notes "PDF/EPUB/DOCX import progress dialog, page counts, cancellation, explicit results, low-memory PDF extraction, experimental offline OCR for scanned PDFs up to 250 pages, Kokoro isolation in a separate process, voice self-tests and visible failures. Both quantized Kokoro models are integrated. CI verifies Android tests and native CPU synthesis on Linux, but Android ARM64 hardware playback must still be confirmed. Debug builds may require reinstall; preserve book files before uninstalling."
+          fi
