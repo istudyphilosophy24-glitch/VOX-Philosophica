@@ -43,7 +43,8 @@ object DocumentParser {
         update("Opening document", note = "Checking the selected file")
         val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
             if (it.moveToFirst()) it.getString(0) else null
-        } ?: "Untitled"
+        } ?: (uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+            ?: "Untitled")
         val ext = name.substringAfterLast('.', "").lowercase()
         val expectedBytes = context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE),
             null, null, null)?.use {
