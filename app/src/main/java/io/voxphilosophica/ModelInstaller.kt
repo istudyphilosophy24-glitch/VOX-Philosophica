@@ -49,6 +49,11 @@ class ModelInstaller(private val context: Context) {
     /** Blocking method: invoke on background thread, never on the main thread. */
     fun install(which: String, onProgress: (String) -> Unit) {
         synchronized(lock) {
+            // The playback service runs in :tts; coordinate installations across processes.
+            val lockFile = File(context.filesDir, "models/.install.lock")
+            lockFile.parentFile?.mkdirs()
+            java.io.RandomAccessFile(lockFile, "rw").channel.use { channel ->
+            channel.lock().use {
             if (installed(which)) return
             val asset = assetName(which)
             require(embedded(which)) { "Integrated Kokoro model not found in APK" }
@@ -60,7 +65,12 @@ class ModelInstaller(private val context: Context) {
             try {
                 onProgress("Preparing integrated Kokoro " + which + " · no internet needed…")
                 var expanded = 0L
+                var lastReported = 0L
                 var entries = 0
+                val stat = android.os.StatFs(context.filesDir.absolutePath)
+                require(stat.availableBytes > 260L * 1024 * 1024) {
+                    "Insufficient free storage to prepare Kokoro. Free at least 300 MB."
+                }
                 val root = staging.canonicalPath + File.separator
                 BZip2CompressorInputStream(
                     BufferedInputStream(context.assets.open(asset), 128 * 1024)
@@ -83,6 +93,11 @@ class ModelInstaller(private val context: Context) {
                                         }
                                         expanded += entry.size
                                         entries++
+                                        if (expanded - lastReported > 12L * 1024 * 1024) {
+                                            onProgress("Unpacking Kokoro " + which + ": " +
+                                                (expanded / 1048576) + " MB extracted…")
+                                            lastReported = expanded
+                                        }
                                         require(expanded < 750L * 1024 * 1024 && entries <= 4000) {
                                             "Kokoro archive exceeds unpacking limit"
                                         }
@@ -109,6 +124,8 @@ class ModelInstaller(private val context: Context) {
                 onProgress("Kokoro " + which + " ready. Voices are fully offline.")
             } finally {
                 staging.deleteRecursively()
+            }
+            }
             }
         }
     }
