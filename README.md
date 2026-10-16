@@ -1,6 +1,12 @@
-# VOX PHILOSOPHICA 0.4.0 — Reader & Listening Studio
+# VOX PHILOSOPHICA 0.4.1 — Playback Hotfix + Reader & Listening Studio
 
 Native, offline-first Android app for philosophical and academic audiobooks.
+
+## 0.4.1 playback crash fix
+
+VOX 0.4.0 could force-close when Play triggered the first playback-status broadcast because a `lateinit` TextView for the current passage had not been initialized. VOX 0.4.1 initializes it, safely checks UI fields before updates, and displays recoverable service-start/notification errors. A Robolectric regression test checks the precise broadcast flow before the APK build.
+
+**Testing scope:** Android compilation and JVM UI test, not a guarantee of physical-phone Kokoro performance or native JNI stability. Please report any remaining force-close along with phone model, Android version, selected voice, and whether it occurs before or after model preparation.
 
 ## New in 0.4: document engine
 
@@ -26,7 +32,7 @@ Weights are **not additionally trained or fine-tuned**. Voice selection, preproc
 
 ## Build
 
-GitHub Actions → **Build VOX 0.4 Reader & UI** → Run workflow. The workflow downloads both pinned Kokoro archives, builds the Android APK, verifies the embedded model assets and uploads it as a downloadable artifact. This version targets 64-bit ARM Android devices, with minSdk 26.
+GitHub Actions → **Build VOX 0.4.1 Playback Hotfix** → Run workflow. The workflow downloads both pinned Kokoro archives, builds the Android APK, verifies the embedded model assets and uploads it as a downloadable artifact. This version targets 64-bit ARM Android devices, with minSdk 26.
 
 ## Known limitations and testing
 
