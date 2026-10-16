@@ -22,6 +22,10 @@ import android.widget.TextView
 import android.text.TextWatcher
 import android.text.Editable
 import android.widget.Toast
+import android.widget.ProgressBar
+import android.net.Uri
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.CancellationException
 import java.util.concurrent.Executors
 
 /** Dedicated library, discovery and voice studio views with a persistent mini-player. */
@@ -34,6 +38,9 @@ class MainActivity : Activity() {
     private lateinit var bottomNavigation: LinearLayout
     private var modelStatus: TextView? = null
     private var preparing = false
+    private var importing = false
+    private var importDialog: AlertDialog? = null
+    private var cancelledImport: AtomicBoolean? = null
     private var page = "home"
     private val documentRequest = 99
     private val playback = object : BroadcastReceiver() {
@@ -118,6 +125,8 @@ class MainActivity : Activity() {
         content.addView(text("Good listening.", 28f, Palette.WHITE, true))
         content.gap(this, 5)
         content.addView(text("Your books. Your voices. Entirely offline.", 13f, Palette.MUTED))
+        content.gap(this, 12)
+        lastImportSummary()
         content.gap(this, 24)
         val books = store.all()
         val feature = column().apply {
@@ -184,6 +193,8 @@ class MainActivity : Activity() {
 
     private fun libraryPage() {
         content.addView(text("Your Library", 29f, Palette.WHITE, true))
+        content.gap(this, 12)
+        lastImportSummary()
         content.gap(this, 14)
         val search = EditText(this).apply {
             hint = "⌕  Search books and authors"
@@ -348,6 +359,141 @@ class MainActivity : Activity() {
         mini.addFull(holder)
     }
 
+    private fun lastImportSummary() {
+        val msg = getSharedPreferences("vox_import", MODE_PRIVATE)
+            .getString("last_result", null) ?: return
+        val failed = getSharedPreferences("vox_import", MODE_PRIVATE)
+            .getBoolean("last_failed", false)
+        val block = section(if (failed) "Last import needs attention" else "Last import completed")
+        block.addView(text(msg, 12f, if (failed) Palette.GOLD else Palette.GREEN))
+        content.addFull(block)
+    }
+
+    /**
+     * Modal progress UI stays visible until the file is fully parsed and saved.
+     * The cancel button sets a cooperative flag checked during copy/page parsing.
+     */
+    private fun beginImport(uri: Uri) {
+        if (importing) {
+            Toast.makeText(this, "A book is already being imported", Toast.LENGTH_SHORT).show()
+            return
+        }
+        importing = true
+        val cancelled = AtomicBoolean(false)
+        cancelledImport = cancelled
+        val body = column().apply { setPadding(dp(20), dp(18), dp(20), dp(16)) }
+        val title = text("Preparing your ebook…", 19f, Palette.WHITE, true)
+        body.addFull(title)
+        body.gap(this, 12)
+        val status = text("Opening selected document", 14f, Palette.MUTED)
+        body.addFull(status)
+        body.gap(this, 14)
+        val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            progress = 1
+            progressTintList = android.content.res.ColorStateList.valueOf(Palette.GREEN)
+            progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Palette.RAISED)
+        }
+        body.addFull(bar)
+        body.gap(this, 9)
+        val fraction = text("Preparing local import…", 12f, Palette.MUTED)
+        body.addFull(fraction)
+        body.gap(this, 15)
+        body.addFull(text("Your book remains on this device. Nothing is uploaded.",
+            12f, Palette.MUTED))
+        body.gap(this, 12)
+        val cancelButton = action("Cancel import", false) {
+            cancelled.set(true)
+            status.text = "Cancelling safely…"
+            fraction.text = "Finishing the current page or archive operation"
+        }
+        body.addFull(cancelButton)
+        val dialog = AlertDialog.Builder(this).setView(body).create().apply {
+            setCancelable(false)
+            window?.setBackgroundDrawableResource(android.R.color.transparent)
+        }
+        importDialog = dialog
+        dialog.show()
+        val started = android.os.SystemClock.uptimeMillis()
+        ioWorker.execute {
+            try {
+                val parsed = DocumentParser.import(this, uri) { p ->
+                    if (cancelled.get()) throw CancellationException("Import cancelled")
+                    runOnUiThread {
+                        if (importDialog !== dialog || isFinishing) return@runOnUiThread
+                        status.text = p.stage
+                        val hasTotal = p.total > 0
+                        val stagePct = if (hasTotal) (p.done.toFloat() / p.total)
+                            .coerceIn(0f, 1f) else 0f
+                        val pct = when (p.stage) {
+                            "Copying document" -> 1 + (stagePct * 17).toInt()
+                            "Extracting EPUB chapters", "Extracting DOCX paragraphs",
+                            "Extracting PDF text", "Reading PDF pages" ->
+                                20 + (stagePct * 70).toInt()
+                            "Extraction complete" -> 92
+                            else -> 19
+                        }
+                        bar.progress = pct
+                        fraction.text = if (hasTotal) {
+                            p.done.toString() + " / " + p.total + " · " +
+                                (stagePct * 100).toInt() + "% of " + p.stage.lowercase() +
+                                "\n" + p.description
+                        } else p.description.ifBlank { "Working…" }
+                    }
+                }
+                if (cancelled.get()) throw CancellationException("Import cancelled")
+                runOnUiThread {
+                    if (importDialog === dialog) {
+                        status.text = "Saving to your library…"
+                        bar.progress = 95
+                        fraction.text = "Keeping imported chapters and book metadata"
+                    }
+                }
+                val saved = store.save(parsed.title, parsed.chapters, parsed.author, parsed.cover)
+                val elapsed = ((android.os.SystemClock.uptimeMillis() - started) / 1000)
+                val result = saved.title + " · " + saved.chapters.size +
+                    " sections · " + saved.wordCount + " words · " + elapsed + " sec"
+                getSharedPreferences("vox_import", MODE_PRIVATE).edit()
+                    .putString("last_result", result).putBoolean("last_failed", false).apply()
+                runOnUiThread {
+                    bar.progress = 100
+                    finishImportDialog(dialog)
+                    navigate("library")
+                    AlertDialog.Builder(this)
+                        .setTitle("Book imported successfully")
+                        .setMessage(result + "\n\nThe text is ready for reading and narration.")
+                        .setPositiveButton("Open reader") { _, _ -> openBook(saved.id) }
+                        .setNegativeButton("Stay in library", null)
+                        .show()
+                }
+            } catch (ex: Exception) {
+                val wasCancelled = cancelled.get() || ex is CancellationException
+                val report = if (wasCancelled) "Import cancelled" else
+                    (ex.message ?: ex.javaClass.simpleName)
+                getSharedPreferences("vox_import", MODE_PRIVATE).edit()
+                    .putString("last_result", report).putBoolean("last_failed", !wasCancelled)
+                    .apply()
+                runOnUiThread {
+                    finishImportDialog(dialog)
+                    if (::content.isInitialized) navigate(page)
+                    AlertDialog.Builder(this)
+                        .setTitle(if (wasCancelled) "Import cancelled" else "Unable to import ebook")
+                        .setMessage(if (wasCancelled) "No book was added."
+                            else report + "\n\nFor scanned PDFs, OCR is required. For encrypted PDFs, remove the password before importing.")
+                        .setPositiveButton("OK", null)
+                        .setNeutralButton("Try another book") { _, _ -> pickBook() }
+                        .show()
+                }
+            }
+        }
+    }
+    private fun finishImportDialog(dialog: AlertDialog) {
+        importing = false
+        cancelledImport = null
+        if (importDialog === dialog) importDialog = null
+        if (dialog.isShowing) dialog.dismiss()
+    }
+
     private fun pickBook() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -377,23 +523,7 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != documentRequest || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
-        Toast.makeText(this, "Importing book…", Toast.LENGTH_SHORT).show()
-        ioWorker.execute {
-            try {
-                val parsed = DocumentParser.import(this, uri)
-                val book = store.save(parsed.title, parsed.chapters, parsed.author, parsed.cover)
-                runOnUiThread {
-                    Toast.makeText(this, "Added " + book.title, Toast.LENGTH_LONG).show()
-                    navigate("library")
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    AlertDialog.Builder(this).setTitle("Book import failed")
-                        .setMessage(e.message ?: "Could not read this file")
-                        .setPositiveButton("OK", null).show()
-                }
-            }
-        }
+        beginImport(uri)
     }
     override fun onStart() {
         super.onStart()
@@ -416,6 +546,8 @@ class MainActivity : Activity() {
         if (::mini.isInitialized) updateMini()
     }
     override fun onDestroy() {
+        cancelledImport?.set(true)
+        importDialog?.dismiss()
         ioWorker.shutdown()
         modelWorker.shutdown()
         super.onDestroy()
